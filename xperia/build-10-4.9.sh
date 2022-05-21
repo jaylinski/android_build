@@ -2,23 +2,6 @@
 set -e
 set -x
 
-_pick_pr() {
-    local _remote=$1
-    local _pr_id=$2
-    local _commits=${3:-1}
-    local _max_commits=${4:-$_commits}
-    local _index=$(($_commits - 1))
-    local _count=0
-
-    git fetch $_remote pull/$_pr_id/head
-
-    while [ $_index -ge 0 -a $_count -lt $_max_commits ]; do
-        git cherry-pick -Xtheirs --no-edit FETCH_HEAD~$_index
-        _index=$(($_index - 1))
-        _count=$(($_count + 1))
-    done
-}
-
 prepare_sources() {
 
     # ----------------------------------------------------------------------
@@ -26,14 +9,14 @@ prepare_sources() {
     # ----------------------------------------------------------------------
 
     if [ -d device/sony/customization ]; then
-       rm -r device/sony/customization
+        rm -r device/sony/customization
     fi
 
     for path in \
         frameworks/base \
         frameworks/opt/net/wifi \
         device/sony/loire \
-        device/sony/kugo \
+        device/sony/suzu \
         device/sony/common \
         device/sony/sepolicy \
         kernel/sony/msm-4.9/kernel \
@@ -50,25 +33,11 @@ prepare_sources() {
     # ----------------------------------------------------------------------
     # Local manifest cleanup
     # ----------------------------------------------------------------------
+
     pushd .repo/local_manifests
         git clean -d -f
         git fetch
         git reset --hard origin/android-10_legacy
-
-        # --------------------------------------------------------------------
-        # Add microg prebuilts manifest
-        # --------------------------------------------------------------------
-        cat >customization.xml <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<manifest>
-
-<remote name="github" fetch="https://github.com/" />
-
-<project path="device/sony/customization/prebuiltapks" name="chris42/android_prebuilts_prebuiltapks" remote="github" revision="master" />
-<project path="device/sony/customization/overlays" name="chris42/android_packages_overlays" remote="github" revision="master" />
-
-</manifest>
-EOF
     popd
 
     ./repo_update.sh
@@ -76,30 +45,6 @@ EOF
     # --------------------------------------------------------------------
     # Additional patching
     # --------------------------------------------------------------------
-    
-    pushd device/sony/customization
-       	# Add microg and prebuilts to device
-        cat >customization.mk <<EOF
-PRODUCT_PACKAGES += \
-    GmsCore \
-    FakeStore \
-    GsfProxy \
-    OpenCamera \
-    FDroid \
-    BromiteSystemWebView \
-    NetworkStackCaptiveOverlay
-#   DejaVuNlpBackend
-#   NominatimNlpBackend
-#   LocalGSMNlpBackend
-#   WLANNlpBackend
-#   MozillaNlpBackend
-EOF
-    popd
-
-    pushd frameworks/base
-        # Add signature spoofing for microg
-        patch -p1 < $PATCH_DIR/android_frameworks_base-Q.patch
-    popd
 
     pushd frameworks/opt/net/wifi
         # Prevent WifiLayerLinkStatsError
@@ -119,28 +64,23 @@ cd $WORK_DIR
 
 # Read android branch from initialized repo
 CURRENT_ANDROID_VERSION=`cat .repo/manifests/default.xml|grep default\ revision|sed 's#^.*refs/tags/\(.*\)"#\1#1'`
-#CURRENT_ANDROID_VERSION=android-10.0.0_r34
-
-TARGET_ANDROID_VERSION=android-10.0.0_r39
+# See https://source.android.com/setup/start/build-numbers
+TARGET_ANDROID_VERSION=android-10.0.0_r41
 
 # Cleanup on branch change
-if [ $CURRENT_ANDROID_VERSION != $TARGET_ANDROID_VERSION ]; then
-    cd ..
-    rm -r $WORK_DIR/*
-    rm -r $WORK_DIR/.repo
-    mkdir -p $WORK_DIR
-    cd $WORK_DIR
-    repo init -u $MIRROR_DIR/platform/manifest.git -b $TARGET_ANDROID_VERSION
-    pushd .repo
-        git clone https://github.com/sonyxperiadev/local_manifests -b android-10_legacy
-    popd
-    repo sync --current-branch --no-tags
-    PREPARE_SOURCES=true
-    CLEAN_BUILD=true
-    REBUILD_KERNEL=true
+if [[ $CURRENT_ANDROID_VERSION != $TARGET_ANDROID_VERSION ]]; then
+    echo "Warning! Clean repo before continuing!"
 fi
 
-# Only resync sources when needed
+mkdir -p $WORK_DIR
+cd $WORK_DIR
+repo init -u https://android.googlesource.com/platform/manifest -b $TARGET_ANDROID_VERSION
+pushd .repo
+    git -C local_manifests pull || git clone https://github.com/sonyxperiadev/local_manifests -b android-10_legacy
+popd
+repo sync --current-branch --no-tags
+
+# Only sync sources when needed
 if [ $PREPARE_SOURCES = true ]; then
     prepare_sources
 fi
@@ -164,6 +104,6 @@ if [ $REBUILD_KERNEL = true ]; then
     popd
 fi
 
-ccache make -j`nproc --all` dist
+ccache make -j8 dist
 
 echo "Compiled branch '$TARGET_ANDROID_VERSION' in: $((($(date +%s)-$start)/60)) minutes"
