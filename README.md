@@ -62,3 +62,11 @@ fastboot devices
 # Follow instructions on https://developer.sony.com/develop/open-devices/guides/aosp-build-instructions/build-aosp-android-android-10-0-0#tutorial-step-8
 fastboot reboot
 ```
+
+## Things not working
+
+* Re-enable double-tap wakeup:
+  * https://github.com/sonyxperiadev/device-sony-suzu/pull/9/files
+  * https://github.com/sonyxperiadev/device-sony-suzu/pull/11/files
+* Remove unnecessary Google search box from launcher
+* Add option to build German version
